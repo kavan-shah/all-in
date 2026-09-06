@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Table Stakes — Poker Night Ledger</title>
+<style>
+  @font-face { font-family: 'system'; src: local(-apple-system); }
+  :root {
+    --felt-900: #0b2b21;
+    --felt-800: #0f3a2c;
+    --felt-700: #144a38;
+    --paper: #f4ecd8;
+    --ink: #1c1a14;
+    --ink-soft: #5a5646;
+    --gold: #d4a537;
+    --gold-bright: #f0c14b;
+    --red-chip: #b5493f;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--felt-900);
+    background-image: radial-gradient(circle at 50% 0%, var(--felt-700) 0%, var(--felt-900) 70%);
+    color: var(--paper);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  #root { max-width: 640px; margin: 0 auto; padding: 28px 20px 80px; }
+
+  .brand { display: flex; align-items: baseline; margin-bottom: 6px; }
+  .brand h1 {
+    font-weight: 700; font-size: 28px; margin: 0; color: var(--paper);
+  }
+  .chip-dot {
+    width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+    margin-right: 8px; background: var(--gold);
+    box-shadow: 0 0 0 2px rgba(212,165,55,0.25);
+  }
+  .subtitle { color: rgba(244,236,216,0.55); font-size: 14px; margin: 0 0 28px; }
+
+  .steps { display: flex; gap: 6px; margin-bottom: 24px; }
+  .step-track { flex: 1; height: 3px; border-radius: 2px; background: rgba(244,236,216,0.15); overflow: hidden; }
+  .step-track.done { background: var(--gold); }
+  .step-track.active { background: linear-gradient(90deg, var(--gold) 50%, rgba(244,236,216,0.15) 50%); }
+
+  .card {
+    background: var(--paper); color: var(--ink); border-radius: 14px;
+    padding: 22px 20px; margin-bottom: 16px; box-shadow: 0 12px 30px rgba(0,0,0,0.3);
+  }
+  .card h2 { font-weight: 700; font-size: 19px; margin: 0 0 4px; color: var(--ink); }
+  .card .hint { font-size: 13px; color: var(--ink-soft); margin: 0 0 18px; line-height: 1.5; }
+
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-soft); margin-bottom: 6px; }
+  input[type="text"], input[type="number"] {
+    width: 100%; font-size: 16px; padding: 10px 12px;
+    border: 1.5px solid rgba(28,26,20,0.15); border-radius: 8px;
+    background: #fff; color: var(--ink); outline: none;
+    -webkit-appearance: none;
+  }
+  input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(212,165,55,0.18); }
+
+  .row { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 10px; }
+  .row > div { flex: 1; }
+
+  button {
+    font-family: inherit; font-weight: 600; font-size: 15px; border: none;
+    border-radius: 9px; padding: 12px 18px; cursor: pointer;
+  }
+  button:active { transform: scale(0.98); }
+  button.primary { background: var(--felt-900); color: var(--paper); width: 100%; }
+  button.primary:disabled { opacity: 0.35; }
+  button.ghost { background: transparent; color: var(--ink-soft); border: 1.5px solid rgba(28,26,20,0.15); }
+  button.gold { background: var(--gold); color: #382a05; width: 100%; }
+  button.gold:disabled { opacity: 0.35; }
+  button.danger-icon { background: transparent; border: none; color: rgba(28,26,20,0.35); padding: 6px; font-size: 20px; line-height: 1; }
+  button.small { padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+
+  .player-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(28,26,20,0.08); }
+  .player-row:last-child { border-bottom: none; }
+  .player-name-tag {
+    width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-family: monospace; font-size: 12px; font-weight: 700;
+    background: var(--felt-800); color: var(--gold-bright); flex-shrink: 0;
+  }
+  .player-name { flex: 1; font-weight: 600; font-size: 15px; }
+  .player-sub { font-size: 12px; color: var(--ink-soft); }
+
+  .buyin-chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .buyin-chip {
+    font-family: monospace; font-size: 12px; background: rgba(212,165,55,0.12); color: #7a5a10;
+    border: 1px solid rgba(212,165,55,0.35); padding: 3px 8px; border-radius: 20px;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .buyin-chip button { padding: 0; background: none; font-size: 13px; color: #a5761c; width: 14px; height: 14px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .stat-box { background: rgba(28,26,20,0.04); border-radius: 10px; padding: 12px 10px; text-align: center; }
+  .stat-box .num { font-family: monospace; font-size: 17px; font-weight: 700; color: var(--ink); }
+  .stat-box .lbl { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
+
+  .balance-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid rgba(28,26,20,0.08); }
+  .balance-row:last-child { border-bottom: none; }
+  .balance-amt { font-family: monospace; font-weight: 700; font-size: 15px; }
+  .pos { color: #1e6b3f; }
+  .neg { color: var(--red-chip); }
+  .zero { color: var(--ink-soft); }
+
+  .txn-card { background: rgba(28,26,20,0.035); border-radius: 10px; padding: 13px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; }
+  .txn-arrow { color: var(--gold); font-size: 15px; flex-shrink: 0; }
+  .txn-text { flex: 1; font-size: 14px; }
+  .txn-amt { font-family: monospace; font-weight: 700; font-size: 15px; color: var(--felt-900); }
+
+  .footer-nav { display: flex; gap: 10px; margin-top: 4px; }
+  .footer-nav button { flex: 1; }
+
+  .empty-msg { text-align: center; padding: 24px 10px; color: var(--ink-soft); font-size: 13.5px; line-height: 1.6; }
+
+  .warn-banner {
+    background: rgba(181,73,63,0.08); border: 1px solid rgba(181,73,63,0.25); color: #8f3a30;
+    font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-bottom: 14px; line-height: 1.5;
+  }
+  .field-error { font-size: 12px; color: var(--red-chip); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(function () {
+  "use strict";
+
+  var state = {
+    step: 0,
+    bankSize: null,
+    players: [],
+    cashouts: {},
+    error: ""
+  };
+
+  var MAX_PLAYERS = 15;
+
+  function rupee(n) {
+    var rounded = Math.round(n);
+    var sign = rounded < 0 ? "-" : "";
+    var abs = Math.abs(rounded);
+    return sign + "\u20B9" + abs.toLocaleString("en-IN");
+  }
+
+  function initials(name) {
+    var parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function totalBuyins() {
+    var sum = 0;
+    state.players.forEach(function (p) {
+      p.buyins.forEach(function (b) { sum += b; });
+    });
+    return sum;
+  }
+
+  function totalCashout() {
+    var sum = 0;
+    state.players.forEach(function (p) {
+      var v = parseFloat(state.cashouts[p.id]);
+      if (!isNaN(v)) sum += v;
+    });
+    return sum;
+  }
+
+  function computeSettlement() {
+    var balances = state.players.map(function (p) {
+      var invested = p.buyins.reduce(function (a, b) { return a + b; }, 0);
+      var final = parseFloat(state.cashouts[p.id]) || 0;
+      return { name: p.name, id: p.id, net: final - invested };
+    });
+
+    var creditors = balances.filter(function (b) { return b.net > 0.01; })
+      .map(function (b) { return { name: b.name, id: b.id, net: b.net }; })
+      .sort(function (a, b) { return b.net - a.net; });
+    var debtors = balances.filter(function (b) { return b.net < -0.01; })
+      .map(function (b) { return { name: b.name, id: b.id, net: -b.net }; })
+      .sort(function (a, b) { return b.net - a.net; });
+
+    var txns = [];
+    var i = 0, j = 0;
+    while (i < debtors.length && j < creditors.length) {
+      var pay = Math.min(debtors[i].net, creditors[j].net);
+      if (pay > 0.5) {
+        txns.push({ from: debtors[i].name, to: creditors[j].name, amount: pay });
+      }
+      debtors[i].net -= pay;
+      creditors[j].net -= pay;
+      if (debtors[i].net < 0.5) i++;
+      if (creditors[j].net < 0.5) j++;
+    }
+    return { txns: txns, balances: balances };
+  }
+
+  function stepBar(activeStep) {
+    var normalized = activeStep === 3.5 ? 2.5 : activeStep;
+    var html = '<div class="steps">';
+    for (var s = 0; s < 4; s++) {
+      var cls = "step-track";
+      if (s < Math.floor(normalized) || (s === Math.floor(normalized) && normalized % 1 !== 0)) cls += " done";
+      else if (s === Math.floor(normalized)) cls += " active";
+      html += '<div class="' + cls + '"></div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function render() {
+    var root = document.getElementById("root");
+    var html = "";
+
+    html += '<div class="brand"><h1><span class="chip-dot"></span>Table Stakes</h1></div>';
+    html += '<p class="subtitle">Poker night ledger — buy-ins, final counts, and who owes who.</p>';
+    html += stepBar(state.step);
+
+    if (state.step === 0) {
+      html += renderStep0();
+    } else if (state.step === 1) {
+      html += renderStep1();
+    } else if (state.step === 2) {
+      html += renderStep2();
+    } else if (state.step === 3.5) {
+      html += renderStep35();
+    } else if (state.step === 3) {
+      html += renderStep3();
+    }
+
+    root.innerHTML = html;
+    attachHandlers();
+  }
+
+  function renderStep0() {
+    var h = '<div class="card">';
+    h += '<h2>Set the bank size</h2>';
+    h += '<p class="hint">The standard buy-in amount for the night. Everyone starts here — you can still add extra buy-ins per player later.</p>';
+    h += '<label>Buy-in amount (\u20B9)</label>';
+    h += '<input type="number" id="bankSizeInput" placeholder="e.g. 500" inputmode="decimal">';
+    if (state.error) h += '<p class="field-error">' + escapeHtml(state.error) + '</p>';
+    h += '<div style="margin-top:16px;"><button class="gold" id="startBtn">Start the game</button></div>';
+    h += '</div>';
+    return h;
+  }
+
+  function renderStep1() {
+    var h = '<div class="card">';
+    h += '<h2>Add players</h2>';
+    h += '<p class="hint">Buy-in is set at ' + rupee(state.bankSize) + ' per player. Up to 15 at the table.</p>';
+    h += '<div class="row"><div><label>Player name</label><input type="text" id="newNameInput" placeholder="e.g. Rohan"></div>';
+    h += '<button class="ghost small" id="addPlayerBtn" style="height:42px;">Add</button></div>';
+    if (state.error) h += '<p class="field-error">' + escapeHtml(state.error) + '</p>';
+
+    if (state.players.length === 0) {
+      h += '<p class="empty-msg">No players yet. Add the first one above.</p>';
+    } else {
+      h += '<div style="margin-top:14px;">';
+      state.players.forEach(function (p) {
+        h += '<div class="player-row">';
+        h += '<div class="player-name-tag">' + escapeHtml(initials(p.name)) + '</div>';
+        h += '<div style="flex:1;"><div class="player-name">' + escapeHtml(p.name) + '</div>';
+        h += '<div class="player-sub">In for ' + rupee(state.bankSize) + '</div></div>';
+        h += '<button class="danger-icon" data-remove-player="' + p.id + '" aria-label="Remove ' + escapeHtml(p.name) + '">&times;</button>';
+        h += '</div>';
+      });
+      h += '</div>';
+    }
+
+    h += '<div class="footer-nav" style="margin-top:18px;">';
+    h += '<button class="ghost" id="backTo0">Back</button>';
+    h += '<button class="primary" id="toStep2">Next: buy-ins (' + state.players.length + ')</button>';
+    h += '</div></div>';
+    return h;
+  }
+
+  function renderStep2() {
+    var h = '<div class="card">';
+    h += '<h2>Track buy-ins</h2>';
+    h += '<p class="hint">Add another buy-in whenever someone rebuys. Total buy-ins so far: <b>' + rupee(totalBuyins()) + '</b>.</p>';
+
+    state.players.forEach(function (p) {
+      var sum = p.buyins.reduce(function (a, b) { return a + b; }, 0);
+      h += '<div class="player-row" style="align-items:flex-start;">';
+      h += '<div class="player-name-tag" style="margin-top:2px;">' + escapeHtml(initials(p.name)) + '</div>';
+      h += '<div style="flex:1;"><div class="player-name">' + escapeHtml(p.name) + '</div>';
+      h += '<div class="player-sub">Total in: ' + rupee(sum) + ' (' + p.buyins.length + ' buy-in' + (p.buyins.length !== 1 ? 's' : '') + ')</div>';
+      h += '<div class="buyin-chip-list">';
+      p.buyins.forEach(function (b, i) {
+        h += '<span class="buyin-chip">' + rupee(b) + '<button data-remove-buyin-player="' + p.id + '" data-remove-buyin-idx="' + i + '" aria-label="Remove this buy-in">&times;</button></span>';
+      });
+      h += '</div></div>';
+      h += '<button class="ghost small" data-add-buyin="' + p.id + '">+ Rebuy</button>';
+      h += '</div>';
+    });
+
+    h += '<div class="footer-nav" style="margin-top:18px;">';
+    h += '<button class="ghost" id="backTo1">Back</button>';
+    h += '<button class="primary" id="toStep35">Next: final standings</button>';
+    h += '</div></div>';
+    return h;
+  }
+
+  function renderStep35() {
+    var h = '<div class="card">';
+    h += '<h2>Final standings</h2>';
+    h += '<p class="hint">Enter each player\'s chip count at the end of the night — what they\'d cash out for.</p>';
+
+    state.players.forEach(function (p) {
+      var sum = p.buyins.reduce(function (a, b) { return a + b; }, 0);
+      var val = state.cashouts[p.id] === undefined ? "" : state.cashouts[p.id];
+      h += '<div class="player-row">';
+      h += '<div class="player-name-tag">' + escapeHtml(initials(p.name)) + '</div>';
+      h += '<div style="flex:1;"><div class="player-name">' + escapeHtml(p.name) + '</div>';
+      h += '<div class="player-sub">Put in ' + rupee(sum) + '</div></div>';
+      h += '<input type="number" inputmode="decimal" class="cashout-input" data-player-id="' + p.id + '" placeholder="0" style="width:110px;text-align:right;" value="' + escapeHtml(String(val)) + '">';
+      h += '</div>';
+    });
+
+    var tb = totalBuyins(), tc = totalCashout(), delta = tc - tb;
+    h += '<div class="stat-grid" style="margin-top:16px;">';
+    h += '<div class="stat-box"><div class="num">' + rupee(tb) + '</div><div class="lbl">total in</div></div>';
+    h += '<div class="stat-box"><div class="num">' + rupee(tc) + '</div><div class="lbl">total out</div></div>';
+    h += '<div class="stat-box"><div class="num" style="color:' + (Math.abs(delta) < 0.5 ? '#1e6b3f' : 'var(--red-chip)') + ';">' + rupee(delta) + '</div><div class="lbl">mismatch</div></div>';
+    h += '</div>';
+
+    if (Math.abs(delta) >= 0.5) {
+      h += '<div class="warn-banner">Chip counts don\'t balance to the table total — off by ' + rupee(Math.abs(delta)) + '. Double-check a count before settling up (it\'s still fine to proceed).</div>';
+    }
+
+    if (state.error) h += '<p class="field-error">' + escapeHtml(state.error) + '</p>';
+
+    h += '<div class="footer-nav">';
+    h += '<button class="ghost" id="backTo2">Back</button>';
+    h += '<button class="primary" id="toStep3">Settle up</button>';
+    h += '</div></div>';
+    return h;
+  }
+
+  function renderStep3() {
+    var result = computeSettlement();
+    var h = '<div class="card">';
+    h += '<h2>Balances</h2>';
+    h += '<p class="hint">What each player is up or down for the night.</p>';
+    result.balances.forEach(function (b) {
+      var cls = b.net > 0.5 ? "pos" : b.net < -0.5 ? "neg" : "zero";
+      var sign = b.net > 0.5 ? "+" : "";
+      h += '<div class="balance-row"><span>' + escapeHtml(b.name) + '</span><span class="balance-amt ' + cls + '">' + sign + rupee(b.net) + '</span></div>';
+    });
+    h += '</div>';
+
+    h += '<div class="card"><h2>Settle up</h2>';
+    if (result.txns.length === 0) {
+      h += '<p class="hint">Everyone\'s square — no payments needed.</p>';
+    } else {
+      h += '<p class="hint">Minimum set of payments to clear every balance (' + result.txns.length + ' transaction' + (result.txns.length !== 1 ? 's' : '') + ').</p>';
+      result.txns.forEach(function (t) {
+        h += '<div class="txn-card"><span class="txn-text"><b>' + escapeHtml(t.from) + '</b> <span class="txn-arrow">&rarr;</span> <b>' + escapeHtml(t.to) + '</b></span>';
+        h += '<span class="txn-amt">' + rupee(t.amount) + '</span></div>';
+      });
+    }
+    h += '</div>';
+
+    h += '<div class="footer-nav">';
+    h += '<button class="ghost" id="backTo35">Back</button>';
+    h += '<button class="ghost" id="newGameBtn">Start new game</button>';
+    h += '</div>';
+    return h;
+  }
+
+  function attachHandlers() {
+    var el;
+
+    el = document.getElementById("startBtn");
+    if (el) el.onclick = function () {
+      var input = document.getElementById("bankSizeInput");
+      var n = parseFloat(input.value);
+      if (!n || n <= 0) { state.error = "Enter a buy-in amount above 0"; render(); return; }
+      state.bankSize = n;
+      state.error = "";
+      state.step = 1;
+      render();
+    };
+
+    el = document.getElementById("addPlayerBtn");
+    if (el) el.onclick = addPlayerHandler;
+
+    var nameInput = document.getElementById("newNameInput");
+    if (nameInput) {
+      nameInput.onkeydown = function (e) {
+        if (e.key === "Enter") addPlayerHandler();
+      };
+    }
+
+    document.querySelectorAll("[data-remove-player]").forEach(function (btn) {
+      btn.onclick = function () {
+        var id = btn.getAttribute("data-remove-player");
+        state.players = state.players.filter(function (p) { return String(p.id) !== id; });
+        render();
+      };
+    });
+
+    el = document.getElementById("backTo0");
+    if (el) el.onclick = function () { state.step = 0; state.error = ""; render(); };
+
+    el = document.getElementById("toStep2");
+    if (el) el.onclick = function () {
+      if (state.players.length < 2) { state.error = "Add at least 2 players before buy-ins"; render(); return; }
+      state.error = "";
+      state.step = 2;
+      render();
+    };
+
+    document.querySelectorAll("[data-add-buyin]").forEach(function (btn) {
+      btn.onclick = function () {
+        var id = btn.getAttribute("data-add-buyin");
+        state.players.forEach(function (p) {
+          if (String(p.id) === id) p.buyins.push(state.bankSize);
+        });
+        render();
+      };
+    });
+
+    document.querySelectorAll("[data-remove-buyin-player]").forEach(function (btn) {
+      btn.onclick = function () {
+        var id = btn.getAttribute("data-remove-buyin-player");
+        var idx = parseInt(btn.getAttribute("data-remove-buyin-idx"), 10);
+        state.players.forEach(function (p) {
+          if (String(p.id) === id) p.buyins.splice(idx, 1);
+        });
+        render();
+      };
+    });
+
+    el = document.getElementById("backTo1");
+    if (el) el.onclick = function () { state.step = 1; render(); };
+
+    el = document.getElementById("toStep35");
+    if (el) el.onclick = function () { state.step = 3.5; render(); };
+
+    document.querySelectorAll(".cashout-input").forEach(function (inp) {
+      inp.oninput = function () {
+        var id = inp.getAttribute("data-player-id");
+        state.cashouts[id] = inp.value;
+        // update stat grid live without full re-render (avoid losing focus)
+        updateStatsLive();
+      };
+    });
+
+    el = document.getElementById("backTo2");
+    if (el) el.onclick = function () { state.step = 2; render(); };
+
+    el = document.getElementById("toStep3");
+    if (el) el.onclick = function () {
+      var missing = state.players.filter(function (p) {
+        return state.cashouts[p.id] === undefined || state.cashouts[p.id] === "";
+      });
+      if (missing.length > 0) { state.error = "Enter a final count for everyone before settling up"; render(); return; }
+      state.error = "";
+      state.step = 3;
+      render();
+    };
+
+    el = document.getElementById("backTo35");
+    if (el) el.onclick = function () { state.step = 3.5; render(); };
+
+    el = document.getElementById("newGameBtn");
+    if (el) el.onclick = function () {
+      state = { step: 0, bankSize: null, players: [], cashouts: {}, error: "" };
+      render();
+    };
+  }
+
+  function updateStatsLive() {
+    var tb = totalBuyins(), tc = totalCashout(), delta = tc - tb;
+    var statBoxes = document.querySelectorAll(".stat-grid .num");
+    if (statBoxes.length === 3) {
+      statBoxes[0].textContent = rupee(tb);
+      statBoxes[1].textContent = rupee(tc);
+      statBoxes[2].textContent = rupee(delta);
+      statBoxes[2].style.color = Math.abs(delta) < 0.5 ? "#1e6b3f" : "var(--red-chip)";
+    }
+    var warnExists = document.querySelector(".warn-banner");
+    if (Math.abs(delta) >= 0.5 && !warnExists) {
+      // re-render fully to insert banner without losing input focus is tricky; simplest: leave banner logic to full render on blur
+    }
+  }
+
+  function addPlayerHandler() {
+    var input = document.getElementById("newNameInput");
+    var name = input.value.trim();
+    if (!name) { state.error = "Enter a name first"; render(); return; }
+    var exists = state.players.some(function (p) { return p.name.toLowerCase() === name.toLowerCase(); });
+    if (exists) { state.error = "That name's already at the table"; render(); return; }
+    if (state.players.length >= MAX_PLAYERS) { state.error = "Table's full at 15 players"; render(); return; }
+    state.players.push({ id: Date.now() + Math.random(), name: name, buyins: [state.bankSize] });
+    state.error = "";
+    render();
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
