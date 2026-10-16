@@ -121,6 +121,16 @@
     font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-bottom: 14px; line-height: 1.5;
   }
   .field-error { font-size: 12px; color: var(--red-chip); margin-top: 4px; }
+.team-select {
+  -webkit-appearance: none; appearance: none; font-family: inherit; font-size: 14px; font-weight: 600;
+  color: var(--felt-900); background-color: #fff; padding: 8px 32px 8px 12px; min-width: 96px;
+  border: 1.5px solid rgba(28,26,20,0.15); border-radius: 8px; outline: none; cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5l5 5 5-5' fill='none' stroke='%230f3a2c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat; background-position: right 11px center;
+}
+.team-select.has-team { background-color: rgba(212,165,55,0.14); border-color: var(--gold); color: #7a5a10; }
+.team-select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(212,165,55,0.18); }
+button.ghost.on-felt { color: var(--paper); border-color: rgba(244,236,216,0.3); }
 </style>
 </head>
 <body>
@@ -134,10 +144,44 @@
     bankSize: null,
     players: [],
     cashouts: {},
+    teams: {},
     error: ""
   };
 
   var MAX_PLAYERS = 15;
+var MISMATCH_LIMIT = 100;
+var STORAGE_KEY = "tableStakesState";
+
+function saveState() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+function loadState() {
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    var s = JSON.parse(raw);
+    if (!s || !Array.isArray(s.players)) return;
+    if ([0, 1, 2, 3, 3.5].indexOf(s.step) === -1) return;
+    if (s.step > 0 && !(s.bankSize > 0)) return;
+    state = {
+      step: (s.step === 2 || s.step === 3.5) ? 1 : s.step,
+      bankSize: s.bankSize || null,
+      players: s.players,
+      cashouts: s.cashouts || {},
+      teams: s.teams || {},
+      error: ""
+    };
+  } catch (e) {}
+}
+
+function bannerText(delta) {
+  var off = rupee(Math.abs(delta));
+  if (Math.abs(delta) >= MISMATCH_LIMIT) {
+    return "Chip counts are off by " + off + ". Fix this before settling (must be within \u20B9" + MISMATCH_LIMIT + ").";
+  }
+  return "Chip counts are off by " + off + ". Small enough to settle, but double-check if you can.";
+}
 
   function rupee(n) {
     var rounded = Math.round(n);
@@ -182,10 +226,20 @@
       return { name: p.name, id: p.id, net: final - invested };
     });
 
-    var creditors = balances.filter(function (b) { return b.net > 0.01; })
+    var units = {}, order = [];
+balances.forEach(function (b) {
+  var t = state.teams[b.id];
+  var key = t ? "t" + t : "p" + b.id;
+  if (!units[key]) { units[key] = { names: [], net: 0 }; order.push(key); }
+  units[key].names.push(b.name);
+  units[key].net += b.net;
+});
+var unitList = order.map(function (k) { return { name: units[k].names.join(" + "), id: k, net: units[k].net }; });
+
+var creditors = unitList.filter(function (b) { return b.net > 0.01; })
       .map(function (b) { return { name: b.name, id: b.id, net: b.net }; })
       .sort(function (a, b) { return b.net - a.net; });
-    var debtors = balances.filter(function (b) { return b.net < -0.01; })
+    var debtors = unitList.filter(function (b) { return b.net < -0.01; })
       .map(function (b) { return { name: b.name, id: b.id, net: -b.net }; })
       .sort(function (a, b) { return b.net - a.net; });
 
@@ -205,12 +259,12 @@
   }
 
   function stepBar(activeStep) {
-    var normalized = activeStep === 3.5 ? 2.5 : activeStep;
+    var stage = activeStep === 3 ? 2 : activeStep;
     var html = '<div class="steps">';
-    for (var s = 0; s < 4; s++) {
+    for (var s = 0; s < 3; s++) {
       var cls = "step-track";
-      if (s < Math.floor(normalized) || (s === Math.floor(normalized) && normalized % 1 !== 0)) cls += " done";
-      else if (s === Math.floor(normalized)) cls += " active";
+      if (s < stage) cls += " done";
+      else if (s === stage) cls += " active";
       html += '<div class="' + cls + '"></div>';
     }
     html += '</div>';
@@ -218,6 +272,7 @@
   }
 
   function render() {
+  saveState();
     var root = document.getElementById("root");
     var html = "";
 
@@ -229,10 +284,6 @@
       html += renderStep0();
     } else if (state.step === 1) {
       html += renderStep1();
-    } else if (state.step === 2) {
-      html += renderStep2();
-    } else if (state.step === 3.5) {
-      html += renderStep35();
     } else if (state.step === 3) {
       html += renderStep3();
     }
@@ -255,8 +306,8 @@
 
   function renderStep1() {
     var h = '<div class="card">';
-    h += '<h2>Add players</h2>';
-    h += '<p class="hint">Buy-in is set at ' + rupee(state.bankSize) + ' per player. Up to 15 at the table.</p>';
+    h += '<h2>The table</h2>';
+    h += '<p class="hint">Buy-in is ' + rupee(state.bankSize) + ' per player. Add players any time, tap Rebuy when someone buys in again, and enter final chip counts at the end of the night.</p>';
     h += '<div class="row"><div><label>Player name</label><input type="text" id="newNameInput" placeholder="e.g. Rohan"></div>';
     h += '<button class="ghost small" id="addPlayerBtn" style="height:42px;">Add</button></div>';
     if (state.error) h += '<p class="field-error">' + escapeHtml(state.error) + '</p>';
@@ -266,81 +317,41 @@
     } else {
       h += '<div style="margin-top:14px;">';
       state.players.forEach(function (p) {
-        h += '<div class="player-row">';
-        h += '<div class="player-name-tag">' + escapeHtml(initials(p.name)) + '</div>';
+        var sum = p.buyins.reduce(function (a, b) { return a + b; }, 0);
+        var val = state.cashouts[p.id] === undefined ? "" : state.cashouts[p.id];
+        h += '<div class="player-row" style="align-items:flex-start;">';
+        h += '<div class="player-name-tag" style="margin-top:2px;">' + escapeHtml(initials(p.name)) + '</div>';
         h += '<div style="flex:1;"><div class="player-name">' + escapeHtml(p.name) + '</div>';
-        h += '<div class="player-sub">In for ' + rupee(state.bankSize) + '</div></div>';
+        h += '<div class="player-sub">Total in: ' + rupee(sum) + ' (' + p.buyins.length + ' buy-in' + (p.buyins.length !== 1 ? 's' : '') + ')</div>';
+        h += '<div class="buyin-chip-list">';
+        p.buyins.forEach(function (b, i) {
+          h += '<span class="buyin-chip">' + rupee(b) + '<button data-remove-buyin-player="' + p.id + '" data-remove-buyin-idx="' + i + '" aria-label="Remove this buy-in">&times;</button></span>';
+        });
+        h += '</div>';
+        h += '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;"><span class="player-sub" style="margin:0;">Final chips</span>';
+        h += '<input type="number" inputmode="decimal" class="cashout-input" data-player-id="' + p.id + '" placeholder="0" style="width:110px;text-align:right;" value="' + escapeHtml(String(val)) + '"></div>';
+        h += '</div>';
+        h += '<button class="ghost small" data-add-buyin="' + p.id + '">+ Rebuy</button>';
         h += '<button class="danger-icon" data-remove-player="' + p.id + '" aria-label="Remove ' + escapeHtml(p.name) + '">&times;</button>';
         h += '</div>';
       });
       h += '</div>';
+
+      var tb = totalBuyins(), tc = totalCashout(), delta = tc - tb;
+      h += '<div class="stat-grid" style="margin-top:16px;">';
+      h += '<div class="stat-box"><div class="num">' + rupee(tb) + '</div><div class="lbl">total in</div></div>';
+      h += '<div class="stat-box"><div class="num">' + rupee(tc) + '</div><div class="lbl">total out</div></div>';
+      h += '<div class="stat-box"><div class="num" style="color:' + (Math.abs(delta) < 0.5 ? '#1e6b3f' : 'var(--red-chip)') + ';">' + rupee(delta) + '</div><div class="lbl">mismatch</div></div>';
+      h += '</div>';
+      h += '<div class="warn-banner" id="warnBanner"' + (Math.abs(delta) < 0.5 ? ' style="display:none;"' : '') + '>' + bannerText(delta) + '</div>';
     }
+
+    var settleErr = state.settleError;
+    state.settleError = "";
+    h += '<p class="field-error" id="settleErr"' + (settleErr ? '' : ' style="display:none;"') + '>' + escapeHtml(settleErr || "") + '</p>';
 
     h += '<div class="footer-nav" style="margin-top:18px;">';
     h += '<button class="ghost" id="backTo0">Back</button>';
-    h += '<button class="primary" id="toStep2">Next: buy-ins (' + state.players.length + ')</button>';
-    h += '</div></div>';
-    return h;
-  }
-
-  function renderStep2() {
-    var h = '<div class="card">';
-    h += '<h2>Track buy-ins</h2>';
-    h += '<p class="hint">Add another buy-in whenever someone rebuys. Total buy-ins so far: <b>' + rupee(totalBuyins()) + '</b>.</p>';
-
-    state.players.forEach(function (p) {
-      var sum = p.buyins.reduce(function (a, b) { return a + b; }, 0);
-      h += '<div class="player-row" style="align-items:flex-start;">';
-      h += '<div class="player-name-tag" style="margin-top:2px;">' + escapeHtml(initials(p.name)) + '</div>';
-      h += '<div style="flex:1;"><div class="player-name">' + escapeHtml(p.name) + '</div>';
-      h += '<div class="player-sub">Total in: ' + rupee(sum) + ' (' + p.buyins.length + ' buy-in' + (p.buyins.length !== 1 ? 's' : '') + ')</div>';
-      h += '<div class="buyin-chip-list">';
-      p.buyins.forEach(function (b, i) {
-        h += '<span class="buyin-chip">' + rupee(b) + '<button data-remove-buyin-player="' + p.id + '" data-remove-buyin-idx="' + i + '" aria-label="Remove this buy-in">&times;</button></span>';
-      });
-      h += '</div></div>';
-      h += '<button class="ghost small" data-add-buyin="' + p.id + '">+ Rebuy</button>';
-      h += '</div>';
-    });
-
-    h += '<div class="footer-nav" style="margin-top:18px;">';
-    h += '<button class="ghost" id="backTo1">Back</button>';
-    h += '<button class="primary" id="toStep35">Next: final standings</button>';
-    h += '</div></div>';
-    return h;
-  }
-
-  function renderStep35() {
-    var h = '<div class="card">';
-    h += '<h2>Final standings</h2>';
-    h += '<p class="hint">Enter each player\'s chip count at the end of the night — what they\'d cash out for.</p>';
-
-    state.players.forEach(function (p) {
-      var sum = p.buyins.reduce(function (a, b) { return a + b; }, 0);
-      var val = state.cashouts[p.id] === undefined ? "" : state.cashouts[p.id];
-      h += '<div class="player-row">';
-      h += '<div class="player-name-tag">' + escapeHtml(initials(p.name)) + '</div>';
-      h += '<div style="flex:1;"><div class="player-name">' + escapeHtml(p.name) + '</div>';
-      h += '<div class="player-sub">Put in ' + rupee(sum) + '</div></div>';
-      h += '<input type="number" inputmode="decimal" class="cashout-input" data-player-id="' + p.id + '" placeholder="0" style="width:110px;text-align:right;" value="' + escapeHtml(String(val)) + '">';
-      h += '</div>';
-    });
-
-    var tb = totalBuyins(), tc = totalCashout(), delta = tc - tb;
-    h += '<div class="stat-grid" style="margin-top:16px;">';
-    h += '<div class="stat-box"><div class="num">' + rupee(tb) + '</div><div class="lbl">total in</div></div>';
-    h += '<div class="stat-box"><div class="num">' + rupee(tc) + '</div><div class="lbl">total out</div></div>';
-    h += '<div class="stat-box"><div class="num" style="color:' + (Math.abs(delta) < 0.5 ? '#1e6b3f' : 'var(--red-chip)') + ';">' + rupee(delta) + '</div><div class="lbl">mismatch</div></div>';
-    h += '</div>';
-
-    if (Math.abs(delta) >= 0.5) {
-      h += '<div class="warn-banner">Chip counts don\'t balance to the table total — off by ' + rupee(Math.abs(delta)) + '. Double-check a count before settling up (it\'s still fine to proceed).</div>';
-    }
-
-    if (state.error) h += '<p class="field-error">' + escapeHtml(state.error) + '</p>';
-
-    h += '<div class="footer-nav">';
-    h += '<button class="ghost" id="backTo2">Back</button>';
     h += '<button class="primary" id="toStep3">Settle up</button>';
     h += '</div></div>';
     return h;
@@ -358,7 +369,20 @@
     });
     h += '</div>';
 
-    h += '<div class="card"><h2>Settle up</h2>';
+    if (state.players.length >= 3) {
+  h += '<div class="card"><h2 style="margin-bottom:10px;">Pay as a team?</h2>';
+  var teamCount = Math.floor(state.players.length / 2);
+  state.players.forEach(function (p) {
+    h += '<div class="player-row"><div class="player-name-tag">' + escapeHtml(initials(p.name)) + '</div><div class="player-name">' + escapeHtml(p.name) + '</div>';
+    h += '<select class="team-select' + (state.teams[p.id] ? ' has-team' : '') + '" data-team-player="' + p.id + '"><option value="">Solo</option>';
+    for (var t = 1; t <= teamCount; t++) {
+      h += '<option value="' + t + '"' + (String(state.teams[p.id]) === String(t) ? ' selected' : '') + '>Team ' + t + '</option>';
+    }
+    h += '</select></div>';
+  });
+  h += '</div>';
+}
+h += '<div class="card"><h2>Settle up</h2>';
     if (result.txns.length === 0) {
       h += '<p class="hint">Everyone\'s square — no payments needed.</p>';
     } else {
@@ -371,8 +395,8 @@
     h += '</div>';
 
     h += '<div class="footer-nav">';
-    h += '<button class="ghost" id="backTo35">Back</button>';
-    h += '<button class="ghost" id="newGameBtn">Start new game</button>';
+    h += '<button class="ghost on-felt" id="backTo35">Back</button>';
+    h += '<button class="gold" id="newGameBtn">Start new game</button>';
     h += '</div>';
     return h;
   }
@@ -404,21 +428,17 @@
     document.querySelectorAll("[data-remove-player]").forEach(function (btn) {
       btn.onclick = function () {
         var id = btn.getAttribute("data-remove-player");
+        var who = state.players.filter(function (p) { return String(p.id) === id; })[0];
+        if (who && who.buyins.length > 1 && !window.confirm("Remove " + who.name + " and their " + who.buyins.length + " buy-ins?")) return;
         state.players = state.players.filter(function (p) { return String(p.id) !== id; });
+        delete state.cashouts[id];
+        delete state.teams[id];
         render();
       };
     });
 
     el = document.getElementById("backTo0");
     if (el) el.onclick = function () { state.step = 0; state.error = ""; render(); };
-
-    el = document.getElementById("toStep2");
-    if (el) el.onclick = function () {
-      if (state.players.length < 2) { state.error = "Add at least 2 players before buy-ins"; render(); return; }
-      state.error = "";
-      state.step = 2;
-      render();
-    };
 
     document.querySelectorAll("[data-add-buyin]").forEach(function (btn) {
       btn.onclick = function () {
@@ -441,41 +461,46 @@
       };
     });
 
-    el = document.getElementById("backTo1");
-    if (el) el.onclick = function () { state.step = 1; render(); };
-
-    el = document.getElementById("toStep35");
-    if (el) el.onclick = function () { state.step = 3.5; render(); };
-
     document.querySelectorAll(".cashout-input").forEach(function (inp) {
       inp.oninput = function () {
         var id = inp.getAttribute("data-player-id");
         state.cashouts[id] = inp.value;
+ saveState();
+        var se = document.getElementById("settleErr");
+        if (se) se.style.display = "none";
         // update stat grid live without full re-render (avoid losing focus)
         updateStatsLive();
       };
     });
 
-    el = document.getElementById("backTo2");
-    if (el) el.onclick = function () { state.step = 2; render(); };
-
     el = document.getElementById("toStep3");
     if (el) el.onclick = function () {
+      if (state.players.length < 2) { state.settleError = "Add at least 2 players first"; render(); return; }
       var missing = state.players.filter(function (p) {
         return state.cashouts[p.id] === undefined || state.cashouts[p.id] === "";
       });
-      if (missing.length > 0) { state.error = "Enter a final count for everyone before settling up"; render(); return; }
+      if (missing.length > 0) { state.settleError = "Enter a final count for everyone before settling up"; render(); return; }
+var gap = Math.abs(totalCashout() - totalBuyins());
+if (gap >= MISMATCH_LIMIT) { state.settleError = "Chip counts are off by " + rupee(gap) + ". Fix them to within \u20B9" + MISMATCH_LIMIT + " before settling."; render(); return; }
       state.error = "";
       state.step = 3;
       render();
     };
 
-    el = document.getElementById("backTo35");
-    if (el) el.onclick = function () { state.step = 3.5; render(); };
+    document.querySelectorAll(".team-select").forEach(function (sel) {
+  sel.onchange = function () {
+    var id = sel.getAttribute("data-team-player");
+    if (sel.value) state.teams[id] = sel.value; else delete state.teams[id];
+    render();
+  };
+});
+
+el = document.getElementById("backTo35");
+    if (el) el.onclick = function () { state.step = 1; render(); };
 
     el = document.getElementById("newGameBtn");
     if (el) el.onclick = function () {
-      state = { step: 0, bankSize: null, players: [], cashouts: {}, error: "" };
+      state = { step: 0, bankSize: null, players: [], cashouts: {}, teams: {}, error: "" };
       render();
     };
   }
@@ -489,10 +514,11 @@
       statBoxes[2].textContent = rupee(delta);
       statBoxes[2].style.color = Math.abs(delta) < 0.5 ? "#1e6b3f" : "var(--red-chip)";
     }
-    var warnExists = document.querySelector(".warn-banner");
-    if (Math.abs(delta) >= 0.5 && !warnExists) {
-      // re-render fully to insert banner without losing input focus is tricky; simplest: leave banner logic to full render on blur
-    }
+    var banner = document.getElementById("warnBanner");
+if (banner) {
+  banner.style.display = Math.abs(delta) < 0.5 ? "none" : "";
+  banner.textContent = bannerText(delta);
+}
   }
 
   function addPlayerHandler() {
@@ -505,9 +531,11 @@
     state.players.push({ id: Date.now() + Math.random(), name: name, buyins: [state.bankSize] });
     state.error = "";
     render();
+    var again = document.getElementById("newNameInput");
+    if (again) again.focus();
   }
-
-  render();
+loadState();
+render();
 })();
 </script>
 </body>
